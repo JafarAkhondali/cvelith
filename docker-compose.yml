@@ -1,0 +1,67 @@
+services:
+  db2026ccs:
+    image: postgres:17
+    restart: always
+    env_file: ./.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      # Host access (manage.py from the host, psql, backups) — localhost only.
+      - 127.0.0.1:${POSTGRES_PORT}:5432
+    volumes:
+      - db_data2026ccs:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./
+    restart: always
+    env_file: ./.env
+    environment:
+      # Inside the compose network the DB is reached by service name, not 127.0.0.1.
+      POSTGRES_HOST: db2026ccs
+      POSTGRES_PORT: "5432"
+    command: ["gunicorn", "cvevibes.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120", "--access-logfile", "-"]
+    depends_on:
+      db2026ccs:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    restart: "no"
+    volumes:
+      - dist_volume:/srv/dist
+
+  caddy:
+    image: caddy:2
+    restart: always
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in .env}
+    depends_on:
+      backend:
+        condition: service_started
+      frontend:
+        condition: service_completed_successfully
+    ports:
+      # Override in .env, e.g. HTTPS_PORT=0.0.0.0:8448 behind a Cloudflare Origin Rule.
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - dist_volume:/srv/dist:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  db_data2026ccs:
+  caddy_data:
+  caddy_config:
+  dist_volume:

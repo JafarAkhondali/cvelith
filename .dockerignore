@@ -1,0 +1,13 @@
+.git
+.venv
+venv
+.env
+.idea
+__pycache__
+*.pyc
+backups/
+dataset/
+certs/
+frontend/
+graphify-out/
+data/
